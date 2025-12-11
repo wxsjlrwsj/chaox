@@ -59,7 +59,7 @@ import { ref, reactive, computed, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message, Key, Lock } from '@element-plus/icons-vue'
 import ParticlesBackground from '../components/ParticlesBackground.vue'
-import { resetPassword as apiResetPassword } from '../api/auth'
+import request from '@/utils/request'
 
 const router = useRouter()
 const showMessage = inject('showMessage')
@@ -110,48 +110,41 @@ const sendCode = () => {
 const handleAction = async () => {
   if (!forgotFormRef.value) return
 
-  // Validate only relevant fields based on step
   const fieldsToValidate = []
   if (step.value === 1) fieldsToValidate.push('account')
   if (step.value === 2) fieldsToValidate.push('code')
   if (step.value === 3) fieldsToValidate.push('newPassword')
 
   await forgotFormRef.value.validateField(fieldsToValidate, async (valid) => {
-    if (valid) {
-      loading.value = true
-      try {
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        
-        if (step.value === 1) {
-            // Check account existence logic here
-            step.value = 2
-            sendCode()
-        } else if (step.value === 2) {
-            if (forgotForm.code !== '123456') {
-                throw new Error('验证码错误')
-            }
-            step.value = 3
-        } else if (step.value === 3) {
-             const payload = {
-               username: forgotForm.account.trim(),
-               email: forgotForm.account.trim(),
-               newPassword: forgotForm.newPassword
-             }
-             const res = await apiResetPassword(payload)
-             if (res && res.code === 200) {
-               showMessage('密码重置成功，请重新登录', 'success')
-               router.push('/login')
-             } else {
-               const msg = (res && res.message) ? res.message : '重置失败'
-               throw new Error(msg)
-             }
+    if (!valid) return
+    loading.value = true
+    try {
+      if (step.value === 1) {
+        step.value = 2
+        sendCode()
+      } else if (step.value === 2) {
+        // 模拟验证码验证
+        if (forgotForm.code !== '123456') {
+          throw new Error('验证码错误')
         }
-
-      } catch (error) {
-        showMessage(error.message || '操作失败', 'error')
-      } finally {
-        loading.value = false
+        step.value = 3
+      } else if (step.value === 3) {
+        await request.post('/auth/reset-password', {
+          username: forgotForm.account,
+          newPassword: forgotForm.newPassword
+        })
+        
+        showMessage('密码重置成功，请重新登录', 'success')
+        router.push('/login')
       }
+    } catch (error) {
+      // request.js 拦截器已处理错误提示 (API调用错误)
+      // 本地校验错误 (如验证码) 仍需显示
+      if (step.value !== 3 || !error.response) {
+         showMessage(error.message || '操作失败', 'error')
+      }
+    } finally {
+      loading.value = false
     }
   })
 }

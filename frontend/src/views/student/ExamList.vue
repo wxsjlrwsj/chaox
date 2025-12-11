@@ -38,7 +38,11 @@
       @row-click="handleRowClick"
     >
       <el-table-column prop="name" label="考试名称" min-width="180" />
-      <el-table-column prop="subject" label="科目" min-width="120" />
+      <el-table-column label="科目" min-width="120">
+        <template #default="scope">
+          {{ scope.row.subject || '-' }}
+        </template>
+      </el-table-column>
       <el-table-column label="考试时间" min-width="240">
         <template #default="scope">
           {{ formatDate(scope.row.startTime) }} 至 {{ formatDate(scope.row.endTime) }}
@@ -96,6 +100,7 @@
 import { ref, reactive, onMounted, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
+import http from '@/api/http'
 
 const router = useRouter()
 const showMessage = inject('showMessage')
@@ -112,54 +117,18 @@ const filterForm = reactive({
   status: ''
 })
 
-// 模拟数据
-const mockExams = [
-  {
-    id: 1,
-    name: '2023年春季高等数学期末考试',
-    subject: '高等数学',
-    startTime: '2023-06-20 09:00:00',
-    endTime: '2023-06-20 11:00:00',
-    duration: 120,
-    status: 'finished'
-  },
-  {
-    id: 2,
-    name: '2023年春季大学英语四级模拟考试',
-    subject: '大学英语',
-    startTime: '2023-06-25 14:00:00',
-    endTime: '2023-06-25 16:00:00',
-    duration: 120,
-    status: 'finished'
-  },
-  {
-    id: 3,
-    name: '2023年秋季Java程序设计期中考试',
-    subject: 'Java程序设计',
-    startTime: '2023-11-10 10:00:00',
-    endTime: '2023-11-10 12:00:00',
-    duration: 120,
-    status: 'in_progress'
-  },
-  {
-    id: 4,
-    name: '2023年秋季数据结构期末考试',
-    subject: '数据结构',
-    startTime: '2023-12-25 09:00:00',
-    endTime: '2023-12-25 11:00:00',
-    duration: 120,
-    status: 'not_started'
-  },
-  {
-    id: 5,
-    name: '2023年秋季计算机网络期末考试',
-    subject: '计算机网络',
-    startTime: '2023-12-28 14:00:00',
-    endTime: '2023-12-28 16:00:00',
-    duration: 120,
-    status: 'not_started'
-  }
-]
+const tabToParam = {
+  all: null,
+  not_started: 'upcoming',
+  in_progress: 'ongoing',
+  finished: 'finished'
+}
+const statusIntToText = (n) => {
+  if (n === 0) return 'not_started'
+  if (n === 1) return 'in_progress'
+  if (n === 2) return 'finished'
+  return 'not_started'
+}
 
 // 格式化日期
 const formatDate = (dateStr) => {
@@ -195,37 +164,41 @@ const getStatusText = (status) => {
   }
 }
 
-// 加载考试列表
-const loadExamList = () => {
+const loadExamList = async () => {
   loading.value = true
-  
-  // 模拟API请求
-  setTimeout(() => {
-    // 根据tab筛选
-    let filteredExams = [...mockExams]
-    
-    if (activeTab.value !== 'all') {
-      filteredExams = filteredExams.filter(exam => exam.status === activeTab.value)
-    }
-    
-    // 根据筛选条件过滤
+  try {
+    const statusParam = tabToParam[activeTab.value] || null
+    const resp = await http.get('/api/student/exams', {
+      params: {
+        status: statusParam,
+        page: currentPage.value,
+        size: pageSize.value
+      }
+    })
+    const data = resp?.data || {}
+    let list = Array.isArray(data.list) ? data.list.map(e => ({
+      id: e.id,
+      name: e.name,
+      subject: e.subject,
+      startTime: e.startTime,
+      endTime: e.endTime,
+      duration: e.duration,
+      status: statusIntToText(e.status)
+    })) : []
     if (filterForm.name) {
-      filteredExams = filteredExams.filter(exam => exam.name.includes(filterForm.name))
+      list = list.filter(exam => exam.name.includes(filterForm.name))
     }
-    
     if (filterForm.status) {
-      filteredExams = filteredExams.filter(exam => exam.status === filterForm.status)
+      list = list.filter(exam => exam.status === filterForm.status)
     }
-    
-    total.value = filteredExams.length
-    
-    // 分页
-    const start = (currentPage.value - 1) * pageSize.value
-    const end = start + pageSize.value
-    examList.value = filteredExams.slice(start, end)
-    
+    total.value = Number(data.total) || list.length
+    examList.value = list
+  } catch (e) {
+    examList.value = []
+    total.value = 0
+  } finally {
     loading.value = false
-  }, 500)
+  }
 }
 
 // 处理搜索

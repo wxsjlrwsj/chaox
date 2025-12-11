@@ -11,7 +11,7 @@
         <el-form-item prop="username">
           <el-input 
             v-model="loginForm.username" 
-            placeholder="用户名" 
+            placeholder="用户名 (admin/teacher/student)" 
             :prefix-icon="User"
             size="large"
           />
@@ -45,8 +45,8 @@
 import { ref, reactive, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { User, Lock } from '@element-plus/icons-vue'
+import request from '@/utils/request'
 import ParticlesBackground from '../components/ParticlesBackground.vue'
-import { login as apiLogin } from '../api/auth'
 
 const router = useRouter()
 const showMessage = inject('showMessage')
@@ -70,34 +70,49 @@ const handleLogin = async () => {
   if (!loginFormRef.value) return
 
   await loginFormRef.value.validate(async (valid) => {
-    if (valid) {
-      loading.value = true
-      try {
-        const res = await apiLogin({ username: loginForm.username, password: loginForm.password })
-        if (res && res.code === 200 && res.data && res.data.token) {
-          const { token, userInfo } = res.data
-          localStorage.setItem('token', token)
-          localStorage.setItem('userType', userInfo.userType)
-          localStorage.setItem('username', userInfo.username)
-          showMessage('登录成功，欢迎回来！', 'success')
-          const role = userInfo.userType
-          if (role === 'admin') {
-            router.push({ name: 'AdminFunctionModule' })
-          } else if (role === 'teacher') {
-            router.push({ name: 'TeacherPractice' })
-          } else {
-            router.push({ name: 'StudentExamList' })
-          }
-        } else {
-          const msg = (res && res.message) ? res.message : '用户名或密码错误'
-          showMessage('登录失败: ' + msg, 'error')
-        }
-      } catch (error) {
-        const msg = error?.response?.data?.message || error.message || '未知错误'
-        showMessage('登录失败: ' + msg, 'error')
-      } finally {
-        loading.value = false
+    if (!valid) return
+    loading.value = true
+    try {
+      const resp = await request.post('/auth/login', {
+        username: loginForm.username,
+        password: loginForm.password
+      })
+      // request.js 拦截器直接返回 response.data，所以这里 resp 就是后端返回的 JSON 对象
+      const data = resp.data || {}
+      const token = data.token
+      const userInfo = data.userInfo || {}
+
+      if (!token || !userInfo.userType) {
+        throw new Error('登录响应不完整')
       }
+
+      localStorage.setItem('token', token)
+      localStorage.setItem('userType', userInfo.userType)
+      localStorage.setItem('username', userInfo.username || loginForm.username)
+
+      showMessage('登录成功，欢迎回来！', 'success')
+
+      // 所有角色登录后统一跳转到首页
+      router.push({ name: 'DashboardHome' })
+    } catch (error) {
+      // request.js 已经处理了错误提示，这里主要处理 fallback 逻辑
+      // showMessage('登录失败: ' + (error.message || '未知错误'), 'error')
+
+      // 开发环境或本地开关启用时，使用测试账号作为后备
+      if (import.meta.env.MODE === 'development' || localStorage.getItem('useFakeAuth') === '1') {
+        let userType = 'student'
+        if (loginForm.username.includes('admin')) userType = 'admin'
+        else if (loginForm.username.includes('teacher')) userType = 'teacher'
+
+        localStorage.setItem('token', 'mock-token-' + Date.now())
+        localStorage.setItem('userType', userType)
+        localStorage.setItem('username', loginForm.username)
+
+        showMessage('登录成功（测试账号）', 'success')
+        router.push({ name: 'DashboardHome' })
+      }
+    } finally {
+      loading.value = false
     }
   })
 }

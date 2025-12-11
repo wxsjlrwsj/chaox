@@ -27,9 +27,9 @@
     
     <el-table v-loading="loading" :data="questionList" border style="width: 100%">
       <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="type" label="题型" width="120">
+      <el-table-column prop="typeId" label="题型" width="120">
         <template #default="scope">
-          {{ getQuestionTypeLabel(scope.row.type) }}
+          {{ getQuestionTypeLabel(scope.row.typeId) }}
         </template>
       </el-table-column>
       <el-table-column prop="content" label="题目内容" show-overflow-tooltip />
@@ -70,6 +70,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, inject } from 'vue'
+import http from '@/api/http'
 
 const showMessage = inject('showMessage')
 
@@ -80,12 +81,11 @@ const total = ref(0)
 const questionList = ref([])
 
 const questionTypes = [
-  { label: '单选题', value: 'single_choice' },
-  { label: '多选题', value: 'multiple_choice' },
-  { label: '判断题', value: 'true_false' },
-  { label: '填空题', value: 'fill_blank' },
-  { label: '简答题', value: 'short_answer' },
-  { label: '编程题', value: 'programming' }
+  { label: '单选题', value: 'SINGLE' },
+  { label: '多选题', value: 'MULTI' },
+  { label: '判断题', value: 'TRUE_FALSE' },
+  { label: '填空题', value: 'FILL' },
+  { label: '简答题', value: 'SHORT' }
 ]
 
 const filterForm = reactive({
@@ -94,10 +94,8 @@ const filterForm = reactive({
 })
 
 // 获取题型标签
-const getQuestionTypeLabel = (type) => {
-  const found = questionTypes.find(item => item.value === type)
-  return found ? found.label : '未知'
-}
+const typeIdLabelMap = { 1: '单选题', 2: '多选题', 3: '判断题', 4: '填空题', 5: '简答题' }
+const getQuestionTypeLabel = (typeId) => typeIdLabelMap[typeId] || '未知'
 
 // 获取推荐理由样式
 const getReasonType = (source) => {
@@ -109,97 +107,37 @@ const getReasonType = (source) => {
   return map[source] || 'info'
 }
 
-// 模拟数据
-const mockQuestions = [
-  {
-    id: 101,
-    type: 'single_choice',
-    content: 'Java中，Interface中定义的方法默认是？',
-    difficulty: 3,
-    source: 'wrong',
-    recommendReason: '曾做错'
-  },
-  {
-    id: 102,
-    type: 'multiple_choice',
-    content: 'Spring Boot的核心注解有哪些？',
-    difficulty: 4,
-    source: 'weak',
-    recommendReason: '薄弱点'
-  },
-  {
-    id: 103,
-    type: 'true_false',
-    content: 'HashMap是线程安全的。',
-    difficulty: 2,
-    source: 'daily',
-    recommendReason: '每日推荐'
-  },
-  {
-    id: 104,
-    type: 'programming',
-    content: '实现一个简单的单例模式。',
-    difficulty: 3,
-    source: 'weak',
-    recommendReason: '重点巩固'
-  },
-  {
-    id: 105,
-    type: 'short_answer',
-    content: '解释什么是死锁，以及如何避免。',
-    difficulty: 4,
-    source: 'wrong',
-    recommendReason: '常考题'
-  }
-]
-
-// 加载题目列表
-const loadQuestionList = () => {
+const loadQuestionList = async () => {
   loading.value = true
-  
-  // 模拟API请求
-  setTimeout(() => {
-    // 根据筛选条件过滤
-    let filteredQuestions = [...mockQuestions]
-    
-    if (filterForm.type) {
-      filteredQuestions = filteredQuestions.filter(q => q.type === filterForm.type)
-    }
-    
-    if (filterForm.source) {
-      filteredQuestions = filteredQuestions.filter(q => q.source === filterForm.source)
-    }
-    
-    total.value = filteredQuestions.length
-    
-    // 分页
-    const start = (currentPage.value - 1) * pageSize.value
-    const end = start + pageSize.value
-    questionList.value = filteredQuestions.slice(start, end)
-    
+  try {
+    const resp = await http.get('/api/questions', {
+      params: {
+        page: currentPage.value,
+        size: pageSize.value,
+        typeCode: filterForm.type || undefined
+      }
+    })
+    const data = resp?.data || {}
+    const list = Array.isArray(data.list) ? data.list : []
+    questionList.value = list
+    total.value = Number(data.total) || list.length
+  } catch (e) {
+    questionList.value = []
+    total.value = 0
+  } finally {
     loading.value = false
-  }, 500)
+  }
 }
 
-// 处理搜索
 const handleSearch = () => {
   currentPage.value = 1
   loadQuestionList()
 }
 
-// 重置筛选条件
-const resetFilter = () => {
-  filterForm.type = ''
-  filterForm.source = ''
-  handleSearch()
-}
-
-// 处理页码变化
 const handleCurrentChange = () => {
   loadQuestionList()
 }
 
-// 处理每页数量变化
 const handleSizeChange = () => {
   currentPage.value = 1
   loadQuestionList()
